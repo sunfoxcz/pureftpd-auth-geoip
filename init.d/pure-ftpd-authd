@@ -1,0 +1,105 @@
+#! /bin/sh
+#
+# pure-ftpd-authd	starts and stops the pure-ftpd ftp daemon
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+NAME=pure-ftpd
+DESC="ftp server"
+: ${SSDAEMONLOGOPTS:="--quiet"}
+UPLOADDAEMON=/usr/sbin/pure-uploadscript
+UDNAME=pure-uploadscript
+UDDESC="ftp upload handler"
+AUTHDAEMON=/usr/sbin/pure-authd
+ADNAME=pure-authd
+ADDESC="auth server"
+WRAPPER=/usr/sbin/pure-ftpd-wrapper
+PIDFILE=/var/run/pure-ftpd/pure-ftpd.pid
+ADPIDFILE=/var/run/pure-ftpd/pure-authd.pid
+DAEMON=/usr/sbin/pure-ftpd
+
+export STANDALONE_OR_INETD=inetd
+export VIRTUALCHROOT=
+test -r /etc/default/pure-ftpd-common && . /etc/default/pure-ftpd-common
+
+SUFFIX=
+if [ "$VIRTUALCHROOT" = "true" ]; then
+	if [ "$SUFFIX" ]; then
+		SUFFIX="$SUFFIX-virtualchroot"
+	else
+		SUFFIX="virtualchroot"
+	fi
+fi
+
+test -x $DAEMON || exit 0
+test -x $AUTHDAEMON || exit 0
+test -x $WRAPPER || exit 0
+
+set -e
+
+if [ ! -e `dirname $PIDFILE` ];then
+       mkdir `dirname $PIDFILE`
+fi
+
+start_uploadscript() {
+	if [ "$UPLOADSCRIPT" -a "$STANDALONE_OR_INETD" != inetd ] && \
+		egrep -i '^[ 	]*(yes|1|on)[ 	]*' /etc/pure-ftpd/conf/CallUploadScript > /dev/null 2>&1
+	then
+		UOPTS=""
+		test "$UPLOADUID" && UOPTS="$UOPTS -u $UPLOADUID"
+		test "$UPLOADGID" && UOPTS="$UOPTS -g $UPLOADGID"
+		echo -n "$1 $UDDESC: "
+		start-stop-daemon --start $SSDAEMONLOGOPTS --oknodo \
+			--exec $UPLOADDAEMON -- -r "$UPLOADSCRIPT" -B $UOPTS
+		echo "$UDNAME."
+		
+	fi
+}
+
+case "$1" in
+  start)
+	test "$STANDALONE_OR_INETD" = standalone || exit 0
+	echo -n "Starting $ADDESC: "
+	start-stop-daemon --start $SSDAEMONLOGOPTS --pidfile "$ADPIFDILE" \
+		--exec $AUTHDAEMON -- -B -p "$ADPIDFILE" \
+		-r /usr/sbin/pure-auth-geoip -s /var/run/ftpd.sock
+	echo "$ADNAME."
+	echo -n "Starting $DESC: "
+	start-stop-daemon --start $SSDAEMONLOGOPTS --pidfile "$PIFDILE" \
+		--exec $WRAPPER -- $SUFFIX
+	start_uploadscript Starting
+	;;
+  stop)
+	echo -n "Stopping $ADDESC: "
+	start-stop-daemon --stop $SSDAEMONLOGOPTS --oknodo --pidfile "$ADPIDFILE"
+	echo "$ADNAME."
+	echo -n "Stopping $DESC: "
+	start-stop-daemon --stop $SSDAEMONLOGOPTS --oknodo --pidfile "$PIDFILE"
+	start-stop-daemon --stop $SSDAEMONLOGOPTS --oknodo --exec $UPLOADDAEMON
+	echo "$NAME."
+	;;
+  restart|force-reload)
+	test "$STANDALONE_OR_INETD" = standalone || exit 0
+	echo -n "Restarting $ADDESC: "
+	start-stop-daemon --stop $SSDAEMONLOGOPTS --oknodo \
+		--pidfile "$ADPIDFILE"
+	echo "$ADNAME."
+	echo -n "Restarting $DESC: "
+	start-stop-daemon --stop $SSDAEMONLOGOPTS --oknodo \
+		--pidfile "$PIDFILE"
+	start-stop-daemon --stop $SSDAEMONLOGOPTS --oknodo --exec $UPLOADDAEMON
+	sleep 1
+	start-stop-daemon --start $SSDAEMONLOGOPTS --pidfile "$ADPIFDILE" \
+		--exec $AUTHDAEMON -- -B -p "$ADPIDFILE" \
+		-r /usr/sbin/pure-auth-geoip -s /var/run/ftpd.sock
+	start-stop-daemon --start $SSDAEMONLOGOPTS --pidfile "$PIDFILE" \
+		--exec $WRAPPER -- $SUFFIX
+	start_uploadscript Restarting
+	;;
+  *)
+	N=/etc/init.d/$NAME
+	echo "Usage: $N {start|stop|restart|force-reload}" >&2
+	exit 1
+	;;
+esac
+
+exit 0

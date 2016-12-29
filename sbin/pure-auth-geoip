@@ -1,0 +1,90 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import GeoIP
+import crypt
+import MySQLdb
+import ConfigParser
+
+config = ConfigParser.ConfigParser()
+config.read("/etc/pure-ftpd/db/auth-geoip.cfg")
+
+try:
+    host       = config.get("mysql", "hostname")
+    user       = config.get("mysql", "user")
+    passwd     = config.get("mysql", "password")
+    db         = config.get("mysql", "database")
+
+    defs = {
+	"user_table" : config.get("tables", "user_table"),
+	"login_col"  : config.get("tables", "login_column"),
+	"passwd_col" : config.get("tables", "password_column"),
+	"home_col"   : config.get("tables", "homedir_column"),
+	"quota_col"  : config.get("tables", "quota_column"),
+	"where_add"  : config.get("tables", "where_add"),
+    }
+    
+    def_uid      = config.get("rights", "default_uid")
+    def_gid      = config.get("rights", "default_gid")
+    per_user_max = config.get("rights", "per_user_maximum")
+    
+    accept_country = config.get("geoip", "accept_country").split(",")
+except (ConfigParser.NoSectionError, ConfigParser.NoOptionError):
+    print "auth_ok:0"
+    print "end"
+    sys.exit()
+#endtry
+
+try:
+    db = MySQLdb.connect(
+	host=host,
+	user=user,
+	passwd=passwd,
+	db=db
+    )
+except Exception:
+    print "auth_ok:0"
+    print "end"
+    sys.exit()
+#endtry
+
+account   = os.environ.get("AUTHD_ACCOUNT")
+password  = os.environ.get("AUTHD_PASSWORD")
+remote_ip = os.environ.get("AUTHD_REMOTE_IP")
+
+cur = db.cursor(MySQLdb.cursors.DictCursor)
+cur.execute("""
+    SELECT `%(passwd_col)s`, `%(home_col)s`, `%(quota_col)s`
+    FROM `%(user_table)s`
+    WHERE `%(login_col)s` = %%s AND %(where_add)s
+""" % defs, account)
+
+user = cur.fetchone()
+
+if not user:
+    print "auth_ok:0"
+    print "end"
+    sys.exit()
+#endif
+
+if user['crypt'] != crypt.crypt(password, user['crypt']):
+    print "auth_ok:0"
+    print "end"
+    sys.exit()
+#endif
+
+gi = GeoIP.new(GeoIP.GEOIP_MEMORY_CACHE)
+if gi.country_code_by_addr(remote_ip) not in accept_country:
+    print "auth_ok:0"
+    print "end"
+    sys.exit()
+#endif
+
+print "auth_ok:1"
+print "uid:%s" % def_uid
+print "gid:%s" % def_gid
+print "dir:%s" % user[defs['home_col']]
+print "user_quota_size:%s" % user[defs['quota_col']]
+print "per_user_max:%s" % per_user_max
+print "end"

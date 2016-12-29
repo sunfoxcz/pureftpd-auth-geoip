@@ -1,0 +1,11 @@
+#!/bin/bash
+#
+# $Id$
+#
+
+echo "Updating init scripts"
+update-rc.d -f pure-ftpd remove
+update-rc.d pure-ftpd-authd defaults
+
+# done
+exit 0

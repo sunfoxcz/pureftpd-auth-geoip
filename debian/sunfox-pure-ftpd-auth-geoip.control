@@ -1,0 +1,7 @@
+Package: __PACKAGE__
+Version: __VERSION__
+Architecture: amd64
+Installed-Size: __SIZE__
+Maintainer: __MAINTAINER__
+Depends: python, python-mysqldb, python-geoip, pure-ftpd
+Description: Sunfox GeoIP auth module for PureFTPd. SVN revision: __SVNVERSION__
